@@ -1,0 +1,81 @@
+Dotplot_modify<-function(x,feature){
+  DotPlot(x, features = feature,
+          assay='RNA' ,group.by = 'celltype') + 
+    #coord_flip() + #翻转
+    #theme(panel.grid = element_blank(), 
+    #     axis.text.x=element_text(angle = 90, hjust = 0.5,vjust=0.5))+
+    labs(x=NULL,y=NULL, title = "Gene Expression in Different Mesenchymal Cells" # 主标题
+    ) + 
+    guides(size = guide_legend("Percent Expression") )+ #legend
+    #scale_color_gradientn(colours = c('#330066','#336699','#66CC66','#FFCC33')) 
+    scale_color_gradientn(colours = c('#FFFFFF',    # 纯白（起点）
+                                      '#FFEEEE',    # 极浅红（接近白）
+                                      '#FFCCCC',    # 浅粉红
+                                      '#FF9999',    # 浅红
+                                      '#FF6666',    # 中红
+                                      '#FF3333',    # 亮红
+                                      '#FF0000' ))+ guides(
+                                        color = guide_colorbar(order = 1), # 颜色图例在前
+                                        size = guide_legend(order = 2)     # 大小图例在后
+                                      ) +
+    scale_size(
+      name = "Percent Expression", # 大小图例标题
+      range = c(0.5, 6),           # 点大小范围（避免过大/过小）
+      breaks = c(0, 25, 50, 75, 100), # 百分比断点
+      labels = c("0%", "25%", "50%", "75%", "100%") # 百分比标签
+    )+theme(
+      # 坐标轴文本
+      axis.text.x = element_text(
+        angle = 90, 
+        hjust = 1, 
+        vjust = 0.5,
+        size = 10,       # 字体大小
+        face = "bold",   # 加粗
+        color = "#333333", # 深灰色（更护眼）
+        family = "Arial" # 统一字体（需系统支持，无则换"SimHei"等）
+      ),
+      axis.text.y = element_text(
+        size = 10,
+        face = "bold",
+        color = "#333333",
+        family = "Arial"
+      ),
+      # 坐标轴线条
+      axis.line = element_line(
+        color = "#333333", 
+        linewidth = 0.8
+      ),
+      # 图例样式
+      legend.title = element_text(
+        size = 10,
+        face = "bold",
+        family = "Arial"
+      ),
+      legend.text = element_text(
+        size = 9,
+        family = "Arial"
+      ),
+      legend.position = "right", # 图例位置（可换"bottom"横向）
+      legend.spacing.y = unit(0.5, "cm"), # 图例行间距
+      # 标题（按需修改）
+      plot.title = element_text(
+        size = 14,
+        face = "bold",
+        hjust = 0.5,
+        family = "Arial",
+        margin = margin(b = 10) # 标题与图的间距
+      ),
+      plot.subtitle = element_text(
+        size = 12,
+        hjust = 0.5,
+        family = "Arial",
+        margin = margin(b = 10)
+      ),
+      # 面板边框（可选，增加立体感）
+      panel.border = element_rect(
+        color = "#333333",
+        fill = NA,
+        linewidth = 0.8
+      )
+    )#+theme_classic()
+}
