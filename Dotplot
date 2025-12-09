@@ -1,10 +1,10 @@
-Dotplot_modify<-function(x,feature){
+Dotplot_modify<-function(x,feature,group_by,title){
   DotPlot(x, features = feature,
-          assay='RNA' ,group.by = 'celltype') + 
+          assay='RNA' ,group.by = group_by') + 
     #coord_flip() + #翻转
     #theme(panel.grid = element_blank(), 
     #     axis.text.x=element_text(angle = 90, hjust = 0.5,vjust=0.5))+
-    labs(x=NULL,y=NULL, title = "Gene Expression in Different Mesenchymal Cells" # 主标题
+    labs(x=NULL,y=NULL, title = title # 主标题
     ) + 
     guides(size = guide_legend("Percent Expression") )+ #legend
     #scale_color_gradientn(colours = c('#330066','#336699','#66CC66','#FFCC33')) 
