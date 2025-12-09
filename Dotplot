@@ -1,3 +1,4 @@
+#使用cairo_pdf导出不然会报错
 Dotplot_modify<-function(x,feature,group_by,title){
   DotPlot(x, features = feature,
           assay='RNA' ,group.by = group_by) + 
