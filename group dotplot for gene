@@ -1,0 +1,78 @@
+library(SCP)
+
+library(Seurat)
+library(dplyr)
+library(plyr)
+seurat_obj<-sce
+# 假设你的 Seurat 对象是 seurat_obj，基因是 MYGENE，病人ID列是 orig.ident，分组列是 treatment（Pr/Po）
+gene_name <- "ICOSLG"
+sce$Therapy
+# 按病人和治疗分组，计算基因的平均表达量
+plot_data <- seurat_obj@meta.data %>%
+  mutate(gene_expr = FetchData(seurat_obj, vars = gene_name)[[1]]) %>%
+  group_by(Patient, Therapy) %>%
+  summarise(mean_expr = mean(gene_expr, na.rm = TRUE), .groups = "drop") %>%
+  rename(condition = Therapy, patient = Patient)
+
+# 查看数据
+head(plot_data)
+
+
+library(ggplot2)
+library(ggpubr) # 用来加P值和统计检验
+
+# 先做配对t检验（和你图里的P值对应）
+paired_test <- t.test(
+  x = plot_data$mean_expr[plot_data$condition == "Pretreatment"],
+  y = plot_data$mean_expr[plot_data$condition == "Posttreatment"],
+  paired = F
+)
+p_val <- paired_test$p.value
+n_samples <- length(unique(plot_data$patient))
+
+# 绘图
+n_Pr <- plot_data %>% filter(condition == "Pretreatment") %>% nrow()
+n_Po <- plot_data %>% filter(condition == "Posttreatment") %>% nrow()
+
+plot_data$condition <- factor(plot_data$condition, levels = c("Pretreatment", "Posttreatment"))
+
+ggplot(plot_data, aes(x = condition, y = mean_expr)) +
+  # 病人连线：浅灰虚线，更柔和
+  geom_line(aes(group = patient), color = "gray60", linetype = "dashed", linewidth = 0.6) +
+  # 散点：更大、更圆、带白边（高级感核心）
+  geom_point(aes(fill = condition), 
+             size = 5.5, 
+             shape = 21,        # 带边框圆点
+             color = "white",   # 白色描边
+             stroke = 1.2,      # 边框粗细
+             show.legend = FALSE) +
+  # 高级配色：不刺眼的蓝/红（CNS风格）
+  scale_fill_manual(values = c("Pretreatment" = "#4A90E2", "Posttreatment" = "#E25757")) +
+  # P值 + 样本量（顶部居中，更美观）
+  annotate("text", x = 1.5, y = Inf, 
+           label = paste0("P = ", signif(p_val, 3), "\nn = ", n_samples),
+           vjust = 2, size = 5, fontface = "bold") +
+  # Y轴设置
+  #scale_y_continuous(expand = c(0, 0), breaks = seq(0, 12, 3)) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))+
+  
+  annotate("text", x = 1.5, y = Inf, 
+           label = paste0(#"P = ",# signif(p_val, 3), 
+                          "\nPr = ", n_Pr, "   Po = ", n_Po),
+           vjust = 2.2, size = 5, fontface = "bold") +
+  
+  # 坐标轴标签
+  labs(y = "Gene Expression Level", x = "") +
+  # 主题：极简、干净、论文标准
+  theme_classic() +
+  theme(
+    # 坐标轴文字与标题
+    axis.text = element_text(size = 15, color = "black", face = "bold"),
+    axis.title = element_text(size = 16, color = "black", face = "bold"),
+    # 坐标轴线与刻度
+    axis.line = element_line(linewidth = 1, color = "black"),
+    axis.ticks = element_line(linewidth = 1, color = "black"),
+    # 让图更紧凑
+    plot.margin = margin(15, 10, 10, 10)
+    
+  )
