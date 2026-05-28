@@ -1,0 +1,43 @@
+netVisual_bubble(
+  cellchat,
+  sources.use = 9,
+  signaling = c('ICOS','CD70'),
+  targets.use = c(10:14,23),
+  remove.isolate = FALSE,
+  return.data = TRUE # 关键：只返回数据，不画图
+)
+
+df <- netVisual_bubble(
+  cellchat,
+  sources.use = 9,
+  signaling = c('ICOS','CD70'),
+  targets.use = c(10:14,23),
+  remove.isolate = FALSE,
+  return.data = TRUE # 关键：只返回数据，不画图
+)
+df<-df[["communication"]]
+
+# 2. 手动设定你的蓝—白—红
+my_col <- c("#003399", "#6699ff", "#e6f2ff", "#ffcccc", "#ff3333")
+
+# 3. 自己用 ggplot 画（彻底可控）
+p_final <- ggplot(df, aes(x = source.target, y = interaction_name_2, size = prob, colour = prob)) +
+  geom_point(alpha = 0.8) +
+  # 这里用 scale_colour_gradientn（因为气泡是 colour 映射，不是 fill）
+  scale_colour_gradientn(
+    colors = my_col,
+    name = "Commun. Prob."
+  ) +
+ # scale_size_continuous(range = c(3, 10)) +
+#  facet_wrap(~signaling, scales = "free_x") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title = element_blank(),
+    #panel.grid.major = element_line(color = "gray50", linewidth = 0.3),
+    #panel.background = element_rect(fill = "white", color = "black", linewidth = 1),
+    legend.position = "right"
+  ) #+ guides(size = guide_none())
+
+print(p_final)
