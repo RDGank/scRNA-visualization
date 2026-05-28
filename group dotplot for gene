@@ -6,16 +6,42 @@ library(plyr)
 seurat_obj<-sce
 # 假设你的 Seurat 对象是 seurat_obj，基因是 MYGENE，病人ID列是 orig.ident，分组列是 treatment（Pr/Po）
 gene_name <- "ICOSLG"
+gene_name <- "CD70"
+gene_name <- "CD274"
 sce$Therapy
 # 按病人和治疗分组，计算基因的平均表达量
 plot_data <- seurat_obj@meta.data %>%
   mutate(gene_expr = FetchData(seurat_obj, vars = gene_name)[[1]]) %>%
   group_by(Patient, Therapy) %>%
   summarise(mean_expr = mean(gene_expr, na.rm = TRUE), .groups = "drop") %>%
-  rename(condition = Therapy, patient = Patient)
+  dplyr::rename(condition = Therapy, patient = Patient)
+
+plot_data <- seurat_obj@meta.data %>%
+  mutate(gene_expr = FetchData(seurat_obj, vars = gene_name)[[1]]) %>%
+  dplyr::group_by(Patient, Therapy) %>%  # 按病人+治疗分组
+  summarise(mean_expr = mean(gene_expr, na.rm = TRUE), .groups = "drop")
 
 # 查看数据
 head(plot_data)
+
+plot_data <-
+  seurat_obj@meta.data %>%
+  {
+    # 强制转字符 + 去空格
+    .$Patient <- as.character(.$Patient) %>% trimws()
+    .$Therapy <- as.character(.$Therapy) %>% trimws()
+    .
+  } %>%
+  as_tibble(rownames = "cell_id") %>%
+  mutate(
+    gene_expr = FetchData(seurat_obj, vars = gene_name)[[1]]
+  ) %>%
+  dplyr::group_by(Patient, Therapy) %>%
+  dplyr::summarise(
+    mean_expr = mean(gene_expr, na.rm = TRUE),
+    n_cells   = n(),
+    .groups   = "drop"
+  )%>%dplyr::rename(condition = Therapy, patient = Patient)
 
 
 library(ggplot2)
@@ -36,6 +62,7 @@ n_Po <- plot_data %>% filter(condition == "Posttreatment") %>% nrow()
 
 plot_data$condition <- factor(plot_data$condition, levels = c("Pretreatment", "Posttreatment"))
 
+pdf(file = 'SCLC_B_CD70.pdf',height = 4.5,width =4 )
 ggplot(plot_data, aes(x = condition, y = mean_expr)) +
   # 病人连线：浅灰虚线，更柔和
   geom_line(aes(group = patient), color = "gray60", linetype = "dashed", linewidth = 0.6) +
@@ -62,7 +89,7 @@ ggplot(plot_data, aes(x = condition, y = mean_expr)) +
            vjust = 2.2, size = 5, fontface = "bold") +
   
   # 坐标轴标签
-  labs(y = "Gene Expression Level", x = "") +
+  labs(y = gene_name, x = "") +
   # 主题：极简、干净、论文标准
   theme_classic() +
   theme(
@@ -76,3 +103,8 @@ ggplot(plot_data, aes(x = condition, y = mean_expr)) +
     plot.margin = margin(15, 10, 10, 10)
     
   )
+dev.off()
+
+
+write.csv(plot_data,file = 'B_ICOSLG_plot_data.csv')
+write.csv(plot_data,file = 'B_CD70_plot_data.csv')
