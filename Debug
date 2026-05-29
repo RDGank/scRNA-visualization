@@ -1,0 +1,3 @@
+#for Dimplot
+sce$UMAP_1 <- NULL
+sce$UMAP_2 <- NULL
