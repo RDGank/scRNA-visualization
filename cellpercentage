@@ -1,0 +1,170 @@
+library(Seurat)
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(cowplot)
+library(ggpubr)
+
+# ====================== 1. 定义你的Seurat对象 ======================
+scedata <- sce
+# 设定分组列名（修改这里适配你的数据）
+group_colname <- "group"
+
+# ====================== 2. 统计：每个样本内各细胞亚群占比 ======================
+# 亚群×样本 细胞计数
+cell_tab <- table(sce$celltype, scedata$orig.ident)
+# 按列（样本）求比例
+Cellratio <- prop.table(cell_tab, margin = 2)
+Cellratio <- as.data.frame(Cellratio)
+colnames(Cellratio) <- c("cell_type", "sample", "Freq")
+
+# 长表转宽表：行=样本，列=细胞亚群，值=占比
+cellper <- dcast(Cellratio, sample ~ cell_type, value.var = "Freq")
+rownames(cellper) <- cellper$sample
+
+# ====================== 3. 自动匹配样本分组（不用手动输入sample/group向量） ======================
+# 提取 样本-分组 对应关系，自动去重
+sample_group_df <- scedata@meta.data %>%
+  select(orig.ident, all_of(group_colname)) %>%
+  distinct(orig.ident, .keep_all = TRUE) %>%
+  rename(sample = orig.ident, group = all_of(group_colname))
+
+rownames(sample_group_df) <- sample_group_df$sample
+# 给占比表添加分组信息
+cellper$sample <- sample_group_df[rownames(cellper), "sample"]
+cellper$group  <- sample_group_df[rownames(cellper), "group"]
+
+# 获取全部细胞亚群名称（自动提取，不用手动写sce_groups）
+all_cell_types <- setdiff(colnames(cellper), c("sample", "group"))
+
+# ====================== 4. 批量循环绘图 ======================
+pplist <- list()
+# 提取两个分组名称（用于t检验比较）
+two_groups <- unique(cellper$group)
+if(length(two_groups) != 2) stop("该代码仅适配两组比较，请确保分组只有2类")
+my_comparisons <- list(c(two_groups[1], two_groups[2]))
+
+for (cell_type in all_cell_types) {
+  # 提取当前亚群数据
+  cellper_ <- cellper %>%
+    select(sample, group, all_of(cell_type))
+  colnames(cellper_) <- c("sample", "group", "percent")
+  cellper_$percent <- as.numeric(cellper_$percent)
+  
+  # 计算四分位数、均值、中位数
+  cellper_ <- cellper_ %>%
+    group_by(group) %>%
+    mutate(
+      lower = quantile(percent, 0.25),
+      upper = quantile(percent, 0.75),
+      mean = mean(percent),
+      median = median(percent)
+    ) %>% ungroup()
+  
+  # 绘图
+  pp1 <- ggplot(cellper_, aes(x = group, y = percent)) +
+    geom_jitter(shape = 21, aes(fill = group), width = 0.25, size = 2) +
+    stat_summary(fun = mean, geom = "point", color = "grey30", size = 2.5) +
+    geom_errorbar(aes(ymin = lower, ymax = upper), col = "grey30", width = 0.3) +
+    theme_cowplot() +
+    theme(
+      axis.text = element_text(size = 10),
+      axis.title = element_text(size = 11),
+      plot.title = element_text(size = 11, face = "plain", hjust = 0.5),
+      legend.position = "none"
+    ) +
+    labs(title = cell_type, y = "Cell proportion", x = NULL) +
+    stat_compare_means(
+      comparisons = my_comparisons,
+      method = "t.test",
+      size = 3,
+      label = "p.signif" # 显示*/**/***/ns，也可改为label="p.value"显示具体P值
+    )
+  
+  pplist[[cell_type]] <- pp1
+}
+
+# ====================== 5. 拼图输出 ======================
+# 按需修改ncol列数，自动排版
+final_plot <- plot_grid(
+  plotlist = pplist,
+  ncol = 5, # 一行放5张子图，自行调整
+  align = "hv"
+)
+
+# 查看图
+print(final_plot)
+
+
+#三分组比较
+all_cell_types <- setdiff(colnames(cellper), c("sample", "group"))
+# 提取3个分组名称，自动生成三组两两比较组合
+three_groups <- sort(unique(cellper$group))
+if(length(three_groups) != 3) stop("当前分组数量不是3个，请检查分组列！")
+my_comparisons <- list(
+  c(three_groups[1], three_groups[2]),
+  c(three_groups[1], three_groups[3]),
+  c(three_groups[2], three_groups[3])
+)
+
+# ========== 4 循环批量绘图（每个细胞亚群一张图） ==========
+pplist <- list()
+
+for (cell_type in all_cell_types) {
+  # 提取当前亚群数据
+  cellper_ <- cellper %>%
+    select(sample, group, all_of(cell_type))
+  colnames(cellper_) <- c("sample", "group", "percent")
+  cellper_$percent <- as.numeric(cellper_$percent)
+  
+  # 计算四分位数（误差棒）、均值、中位数
+  cellper_ <- cellper_ %>%
+    group_by(group) %>%
+    mutate(
+      lower = quantile(percent, 0.25),
+      upper = quantile(percent, 0.75),
+      mean = mean(percent),
+      median = median(percent)
+    ) %>% ungroup()
+  
+  pp1 <- ggplot(cellper_, aes(x = group, y = percent)) +
+    # 散点
+    geom_jitter(shape = 21, aes(fill = group), width = 0.25, size = 2) +
+    # 组均值圆点
+    stat_summary(fun = mean, geom = "point", color = "grey30", size = 2.5) +
+    # 四分位数误差棒
+    geom_errorbar(aes(ymin = lower, ymax = upper), col = "grey30", width = 0.3) +
+    theme_cowplot() +
+    theme(
+      axis.text = element_text(size = 10),
+      axis.title = element_text(size = 11),
+      plot.title = element_text(size = 11, face = "plain", hjust = 0.5),
+      legend.position = "none"
+    ) +
+    labs(title = cell_type, y = "Cell proportion", x = NULL) +
+    # ANOVA整体检验 + 三组两两比较
+    stat_compare_means(
+      comparisons = my_comparisons,
+      method = "anova",        # 先整体ANOVA判断三组是否存在差异
+      method.y.increase = 0.06, # 显著性标签纵向偏移避免重叠
+      size = 3,
+      label = "p.signif"        # 显示*/**/***/ns；改为"p.value"显示具体P值
+    )
+  
+  pplist[[cell_type]] <- pp1
+}
+
+# ========== 5 拼图排版输出 ==========
+final_plot <- plot_grid(
+  plotlist = pplist,
+  ncol = 5,   # 一行摆放几张子图，按需修改
+  align = "hv"
+)
+
+print(final_plot)
+
+
+
+# 导出高清图
+ggsave("CellProportion_Compare_test.pdf", final_plot, width = 10, height = 5, dpi = 600)
+ggsave("CellProportion_Compare_Ttest.png", final_plot, width = 18, height = 8, dpi = 600)
