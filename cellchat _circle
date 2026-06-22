@@ -1,0 +1,172 @@
+plot_cellchat_circos <- function(communication_data, cell_groups = NULL, legend_in_plot = FALSE) {
+  # 补齐依赖包
+  if (!requireNamespace("circlize", quietly = TRUE)) install.packages("circlize")
+  if (!requireNamespace("ComplexHeatmap", quietly = TRUE)) install.packages("ComplexHeatmap")
+  if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+  if (!requireNamespace("ggsci", quietly = TRUE)) install.packages("ggsci")
+  library(circlize)
+  library(ComplexHeatmap)
+  library(dplyr)
+  library(grid)
+  library(ggsci)
+  
+  # 仅保留互作概率 > 0.01 的数据
+  communication_data <- communication_data %>% filter(prob > 0.000000000000000000000001)
+  if(nrow(communication_data) == 0){
+    stop("过滤后无有效互作数据，请调低筛选阈值")
+  }
+  
+  # 整理数据，拆分 Ligand 和 Receptor
+  result_df <- communication_data %>%
+    tidyr::pivot_longer(cols = c(ligand, receptor), names_to = "group", values_to = "gene") %>%
+    mutate(cells = if_else(group == "ligand", source, target)) %>%
+    select(gene, group, cells) %>%
+    distinct()
+  
+  # 确保所有 source 和 target 细胞都包含
+  all_cells <- unique(c(communication_data$source, communication_data$target))
+  
+  # 如果用户提供了细胞组信息，则按照 cell_groups 重新排序
+  if (!is.null(cell_groups)) {
+    ordered_cells <- intersect(cell_groups, all_cells)  # 仅保留数据中存在的细胞
+  } else {
+    ordered_cells <- sort(all_cells)
+  }
+  
+  # 设定细胞因子顺序
+  result_df <- result_df %>%
+    mutate(
+      cells = factor(cells, levels = ordered_cells),
+      group = factor(group, levels = c("ligand", "receptor"))
+    ) %>%
+    arrange(cells, group)
+  
+  # 颜色设置
+  group_colors <-  pal_nejm("default")(length(ordered_cells))
+  names(group_colors) <- ordered_cells
+  
+  LR_color <- c("ligand" = "pink", "receptor" = "lightblue")
+  result_df$color <- group_colors[result_df$cells]
+  result_df$LR_color <- LR_color[result_df$group]
+  
+  # 计算每个细胞组的基因数量
+  group_size <- table(result_df$cells)[ordered_cells]
+  
+  # ===================== 修复核心：circos.initialize 正确写法 =====================
+  # 1. 扇区只用唯一细胞名，每个细胞只出现一次
+  unique_sectors <- ordered_cells
+  # 2. 构造标准 N行2列 xlim 矩阵，行数 = 扇区总数
+  xlim_mat <- cbind(rep(0, length(unique_sectors)), as.numeric(group_size))
+  rownames(xlim_mat) <- unique_sectors
+  
+  # Circos 初始化
+  circos.clear()
+  circos.par(start.degree = 90, cell.padding = c(0, 0, 0, 0), gap.after = 2, circle.margin = c(0.1, 0.1, 0.1, 0.1))
+  circos.initialize(factors = unique_sectors, xlim = xlim_mat)
+  # =================================================================================
+  
+  ## **第一层：受体和配体基因**
+  circos.track(
+    ylim = c(0, 1), bg.border = NA, track.height = 0.01,
+    panel.fun = function(x, y) {
+      sector_index <- get.cell.meta.data("sector.index")
+      gene_vec <- result_df$gene[result_df$cells == sector_index]
+      lr_col_vec <- result_df$LR_color[result_df$cells == sector_index]
+      n_gene <- length(gene_vec)
+      
+      for (i in 1:n_gene) {
+        circos.text(
+          x = i - 0.5, y = 0.5, 
+          labels = gene_vec[i], 
+          col = lr_col_vec[i],
+          font = 2, facing = "reverse.clockwise", niceFacing = TRUE, 
+          adj = c(1, 0.5), cex = 0.8
+        )
+      }
+    }
+  )
+  
+  ## **第二层：细胞类型注释**
+  circos.track(ylim = c(0, 1), bg.border = NA, track.height = 0.08, bg.col = group_colors,
+               panel.fun = function(x, y) {
+                 sector.index <- get.cell.meta.data("sector.index")
+                 circos.text(mean(get.cell.meta.data("xlim")), mean(get.cell.meta.data("ylim")), 
+                             sector.index, col = "black", cex = 0.8, font = 2,
+                             facing = 'bending.inside', niceFacing = TRUE)
+               })
+  
+  ## **第三层：受体-配体注释**
+  labels_LR <- c("L", "R")
+  circos.track(
+    ylim = c(0,1), bg.border = NA, track.height = 0.08,
+    panel.fun = function(x, y) {
+      sector_index <- get.cell.meta.data("sector.index")
+      group_data <- result_df[result_df$cells == sector_index, ]
+      LR_counts <- table(group_data$group)
+      # 防止某类LR缺失报错
+      LR_counts <- setNames(c(LR_counts["ligand"], LR_counts["receptor"]), c("ligand","receptor"))
+      LR_counts[is.na(LR_counts)] <- 0
+      
+      xleft <- c(0, LR_counts[1])
+      xright <- cumsum(LR_counts)
+      
+      for (i in 1:2) {
+        if(xleft[i] >= xright[i]) next
+        circos.rect(
+          xleft = xleft[i], xright = xright[i], ybottom = 0, ytop = 1,
+          col = LR_color[i], border = NA
+        )
+        circos.text(xleft[i] + LR_counts[i]/2, 0.5, labels_LR[i], col = "white", 
+                    cex = 0.8, font = 2, facing = 'bending.inside', niceFacing = TRUE)
+      }
+    }
+  )
+  
+  ## **添加细胞间互作连线**
+  col_fun <- colorRamp2(range(communication_data$prob), c("#FFFDE7", "#013220"))
+  
+  for (i in 1:nrow(communication_data)) {
+    source <- as.character(communication_data$source[i])
+    ligand <- as.character(communication_data$ligand[i])
+    from_subset <- result_df[result_df$cells == source, ]
+    from_idx <- which(from_subset$gene == ligand)
+    if(length(from_idx)==0) next
+    
+    target <- as.character(communication_data$target[i])
+    receptor <- as.character(communication_data$receptor[i])
+    to_subset <- result_df[result_df$cells == target, ]
+    to_idx <- which(to_subset$gene == receptor)
+    if(length(to_idx)==0) next
+    
+    if (ligand != receptor) {
+      from_pos <- from_idx - 0.5
+      to_pos <- to_idx - 0.5
+    } else {
+      from_pos <- from_idx[1] - 0.5
+      to_pos <- to_idx[2] - 0.5
+    }
+    
+    circos.link(source, from_pos, target, to_pos, 
+                col = col_fun(communication_data$prob[i]), lwd = 2, 
+                directional = 1, arr.length = 0.2, arr.width = 0.1)
+  }
+  
+  ## **添加图例**
+  if (legend_in_plot) {
+    lgd <- Legend(title ="Score", col_fun = col_fun, direction="horizontal", border="black")
+    pushViewport(viewport(x = 0.5, y = -0.1, width = 0.6, height = 0.1))
+    grid.draw(lgd)
+    popViewport()
+  } else {
+    pushViewport(viewport(x = 0.5, y = -0.1, width = 0.6, height = 0.1))
+    grid.draw(Legend(title ="Score", col_fun = col_fun, direction="horizontal", border="black"))
+    popViewport()
+  }
+}
+
+communication_data <- subsetCommunication(cellchat, sources.use = c("c02_EC_COL4A1"),
+                                targets.use = )
+
+
+library(ggsci)
+plot_cellchat_circos(communication_data, legend_in_plot = F)
