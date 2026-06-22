@@ -1,4 +1,4 @@
-plot_cellchat_circos <- function(communication_data, cell_groups = NULL, legend_in_plot = FALSE) {
+plot_cellchat_circos <- function(communication_data,color,probli, cell_groups = NULL, legend_in_plot = FALSE) {
   # 补齐依赖包
   if (!requireNamespace("circlize", quietly = TRUE)) install.packages("circlize")
   if (!requireNamespace("ComplexHeatmap", quietly = TRUE)) install.packages("ComplexHeatmap")
@@ -11,7 +11,7 @@ plot_cellchat_circos <- function(communication_data, cell_groups = NULL, legend_
   library(ggsci)
   
   # 仅保留互作概率 > 0.01 的数据
-  communication_data <- communication_data %>% filter(prob > 0.000000000000000000000001)
+  communication_data <- communication_data %>% filter(prob > probli)
   if(nrow(communication_data) == 0){
     stop("过滤后无有效互作数据，请调低筛选阈值")
   }
@@ -42,7 +42,8 @@ plot_cellchat_circos <- function(communication_data, cell_groups = NULL, legend_
     arrange(cells, group)
   
   # 颜色设置
-  group_colors <-  pal_nejm("default")(length(ordered_cells))
+  n_cell <- length(ordered_cells)
+  group_colors <- color[1:n_cell]
   names(group_colors) <- ordered_cells
   
   LR_color <- c("ligand" = "pink", "receptor" = "lightblue")
@@ -123,6 +124,7 @@ plot_cellchat_circos <- function(communication_data, cell_groups = NULL, legend_
   )
   
   ## **添加细胞间互作连线**
+  ## **添加细胞间互作连线**
   col_fun <- colorRamp2(range(communication_data$prob), c("#FFFDE7", "#013220"))
   
   for (i in 1:nrow(communication_data)) {
@@ -130,25 +132,51 @@ plot_cellchat_circos <- function(communication_data, cell_groups = NULL, legend_
     ligand <- as.character(communication_data$ligand[i])
     from_subset <- result_df[result_df$cells == source, ]
     from_idx <- which(from_subset$gene == ligand)
-    if(length(from_idx)==0) next
+    
+    # 1. 找不到配体，直接跳过本条连线
+    if (length(from_idx) == 0) next
     
     target <- as.character(communication_data$target[i])
     receptor <- as.character(communication_data$receptor[i])
     to_subset <- result_df[result_df$cells == target, ]
     to_idx <- which(to_subset$gene == receptor)
-    if(length(to_idx)==0) next
+    
+    # 2. 找不到受体，直接跳过本条连线
+    if (length(to_idx) == 0) next
+    
+    # 初始化位置变量，预防NA
+    from_pos <- NA
+    to_pos <- NA
     
     if (ligand != receptor) {
       from_pos <- from_idx - 0.5
       to_pos <- to_idx - 0.5
     } else {
-      from_pos <- from_idx[1] - 0.5
-      to_pos <- to_idx[2] - 0.5
+      # 同基因自互作：必须至少2个匹配才画连线，否则跳过防下标越界
+      if (length(from_idx) >= 2) {
+        from_pos <- from_idx[1] - 0.5
+        to_pos <- from_idx[2] - 0.5
+      } else {
+        # 单个匹配无法画自连线，跳过
+        next
+      }
     }
     
-    circos.link(source, from_pos, target, to_pos, 
-                col = col_fun(communication_data$prob[i]), lwd = 2, 
-                directional = 1, arr.length = 0.2, arr.width = 0.1)
+    # 3. 关键兜底：位置一旦是NA，直接跳过绘图
+    #if (is.na(from_pos) || is.na(to_pos)) next
+    if (any(is.na(from_pos)) || any(is.na(to_pos))) next
+    
+    # 4. 确保是标量数值（防止向量传入角度错乱）
+    if (length(from_pos) != 1 || length(to_pos) != 1) next
+    
+    circos.link(
+      source, from_pos, target, to_pos,
+      col = col_fun(communication_data$prob[i]),
+      lwd = 2,
+      directional = 1,
+      arr.length = 0.2,
+      arr.width = 0.1
+    )
   }
   
   ## **添加图例**
@@ -164,9 +192,10 @@ plot_cellchat_circos <- function(communication_data, cell_groups = NULL, legend_
   }
 }
 
-communication_data <- subsetCommunication(cellchat, sources.use = c("c02_EC_COL4A1"),
-                                targets.use = )
+communication_data <- subsetCommunication(cellchat, sources.use = c("c02_EC_COL4A1")
+                                #targets.use = c('c02_EC_COL4A1')
+                                )
 
 
 library(ggsci)
-plot_cellchat_circos(communication_data, legend_in_plot = F)
+plot_cellchat_circos(communication_data,color = Col1, probli=0.0000000000000000001,legend_in_plot = F)
